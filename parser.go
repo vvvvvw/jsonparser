@@ -162,7 +162,7 @@ func stringEnd(data []byte) (int, bool) {
 	escaped := false
 	for i, c := range data {
 		if c == '"' {
-			if !escaped {
+			if !escaped { //如果是非转义的"
 				return i + 1, false
 			} else {
 				j := i - 1
@@ -217,6 +217,7 @@ func blockEnd(data []byte, openSym byte, closeSym byte) int {
 	return -1
 }
 
+//从 data中去 匹配keys中的每一个元素，返回符合条件的value的开始位置
 func searchKeys(data []byte, keys ...string) int {
 	keyLevel := 0
 	level := 0
@@ -233,10 +234,12 @@ func searchKeys(data []byte, keys ...string) int {
 
 	for i < ln {
 		switch data[i] {
+		//如果是字符串
 		case '"':
 			i++
 			keyBegin := i
 
+			//搜索 字符串的末尾"
 			strEnd, keyEscaped := stringEnd(data[i:])
 			if strEnd == -1 {
 				return -1
@@ -244,6 +247,7 @@ func searchKeys(data []byte, keys ...string) int {
 			i += strEnd
 			keyEnd := i - 1
 
+			// 跳过空格
 			valueOffset := nextToken(data[i:])
 			if valueOffset == -1 {
 				return -1
@@ -251,12 +255,12 @@ func searchKeys(data []byte, keys ...string) int {
 
 			i += valueOffset
 
-			// if string is a key
+			// 如果value的第一个字符是:，说明是字符串
 			if data[i] == ':' {
 				if level < 1 {
 					return -1
 				}
-
+				//获取key
 				key := data[keyBegin:keyEnd]
 
 				// for unescape: if there are no escape sequences, this is cheap; if there are, it is a
@@ -271,6 +275,7 @@ func searchKeys(data []byte, keys ...string) int {
 				}
 
 				if level <= len(keys) {
+					//匹配第level-1个key
 					if equalStr(&keyUnesc, keys[level-1]) {
 						lastMatched = true
 
@@ -278,7 +283,7 @@ func searchKeys(data []byte, keys ...string) int {
 						if keyLevel == level-1 {
 							keyLevel++
 							// If we found all keys in path
-							if keyLevel == lk {
+							if keyLevel == lk { //如果所有key都匹配好了，则返回 value 的开始位置
 								return i + 1
 							}
 						}
@@ -291,10 +296,12 @@ func searchKeys(data []byte, keys ...string) int {
 			} else {
 				i--
 			}
+		//如果value是对象
 		case '{':
 
 			// in case parent key is matched then only we will increase the level otherwise can directly
 			// can move to the end of this block
+			//如果 key 不匹配，则找到 跳过当前 对象块，去匹配 下一个key
 			if !lastMatched {
 				end := blockEnd(data[i:], '{', '}')
 				if end == -1 {
@@ -302,6 +309,7 @@ func searchKeys(data []byte, keys ...string) int {
 				}
 				i += end - 1
 			} else {
+				//如果 key匹配，则匹配 下一层key
 				level++
 			}
 		case '}':
@@ -873,7 +881,7 @@ func getType(data []byte, offset int) ([]byte, ValueType, int, error) {
 	var dataType ValueType
 	endOffset := offset
 
-	// if string value
+	// 如果value的第一个字符是 ",则表示是字符串
 	if data[offset] == '"' {
 		dataType = String
 		if idx, _ := stringEnd(data[offset+1:]); idx != -1 {
@@ -881,6 +889,7 @@ func getType(data []byte, offset int) ([]byte, ValueType, int, error) {
 		} else {
 			return nil, dataType, offset, MalformedStringError
 		}
+		//如果value的下一个字符是[,表示是数组，则找到 对应的]
 	} else if data[offset] == '[' { // if array value
 		dataType = Array
 		// break label, for stopping nested loops
@@ -891,6 +900,7 @@ func getType(data []byte, offset int) ([]byte, ValueType, int, error) {
 		}
 
 		endOffset += offset
+		//如果value的下一个字符是{,表示是数组，则找到 对应的}
 	} else if data[offset] == '{' { // if object value
 		dataType = Object
 		// break label, for stopping nested loops
@@ -902,6 +912,7 @@ func getType(data []byte, offset int) ([]byte, ValueType, int, error) {
 
 		endOffset += offset
 	} else {
+		//如果是 true、false、或者数字
 		// Number, Boolean or None
 		end := tokenEnd(data[endOffset:])
 
@@ -954,6 +965,7 @@ func Get(data []byte, keys ...string) (value []byte, dataType ValueType, offset 
 
 func internalGet(data []byte, keys ...string) (value []byte, dataType ValueType, offset, endOffset int, err error) {
 	if len(keys) > 0 {
+		//搜索data，找到匹配keys中的每一个元素的value的开始位置
 		if offset = searchKeys(data, keys...); offset == -1 {
 			return nil, NotExist, -1, -1, KeyPathNotFoundError
 		}
@@ -966,6 +978,7 @@ func internalGet(data []byte, keys ...string) (value []byte, dataType ValueType,
 	}
 
 	offset += nO
+	//搜索 value的结束位置
 	value, dataType, endOffset, err = getType(data, offset)
 	if err != nil {
 		return value, dataType, offset, endOffset, err
